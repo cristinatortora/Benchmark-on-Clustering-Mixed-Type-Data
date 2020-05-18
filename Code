@@ -1,0 +1,588 @@
+# TITLE: BENCHMARKING IN CLUSTER ANALYSIS FOR MIXED DATA
+# BY: Madhumita Roy and Jarrett Jimeno
+# DATE: April 15, 2019
+# ADVISOR: Dr. Cristina Tortora
+
+
+
+#----------------------------
+# PART 1A : INSTALL PACKAGES 
+#----------------------------
+
+install.packages("kamila") #KAMILA
+install.packages("FactoMineR") #MCA
+install.packages("MixGHD") #ARI
+install.packages("fclust") # Fuzzy K Means
+install.packages("FPDclustering")#PDQ
+install.packages("teigen") #student's t
+
+
+#--------------------------------------------------------------------
+# PART 1B : FUNCTION FOR MIXED DATA SIMULATION (Author: Noe Vidales)
+#--------------------------------------------------------------------
+
+mixt_data<-function(cont_var=NULL,cont_cov=NULL, over_cont=NULL, ord_var=NULL,ord_lev=NULL, over_ord=NULL, bin_var=NULL,over_bin=NULL,nom_var=NULL, nom_lev=NULL, over_nom=NULL, clusters=NULL, obser=NULL,symm=TRUE)
+{
+  library(Matrix)
+  library(mvtnorm)
+  #data check
+  
+  if(is.null(clusters)){stop("PLease specify the total number of clusters.")}
+  if(is.null(obser)){stop("PLease specify the total number of observations.")}
+  
+  if(!is.null(clusters)&&!is.null(obser)&&(is.null(ord_var)&&is.null(bin_var)&&is.null(cont_var)&&is.null(nom_var))){stop("Please specify the data type.")}
+  # partition cluster sizes 
+  
+  if(symm==TRUE)
+  {clus_dat_part<-floor(rep((obser/clusters),clusters))
+  clus_dat_part[clusters]<-obser-sum(clus_dat_part[-clusters])
+  }
+  
+  if(symm!=TRUE)
+  {
+    prob_part<-runif((clusters-1),.1,(1/(clusters)))
+    prob_part[clusters]<-1-sum(prob_part)
+    clus_dat_part=as.vector(rmultinom(1,obser, prob=prob_part))
+  }
+  
+  tot_data<-vector() 
+  #generate continuous data
+  if(!(is.null(cont_var)))
+  {
+    if(is.null(over_cont))
+    {
+      over_cont<-rep(0,times=cont_var)
+    }
+    else{if(length(over_cont)!=cont_var){stop("Please make sure that the overlap parameters are of the same length as the continous variables")}}
+    
+    #generate covariance matrix
+    
+    cov<-diag(1,nrow=cont_var)
+
+    data<-matrix(0,ncol=cont_var, nrow=1)
+    mean_clus<-matrix(0,ncol=cont_var, nrow=clusters)
+    mean_int<-seq(from=0, to=10, length.out = cont_var)
+    cont_data<-matrix(0, nrow=1,ncol=cont_var)
+    for(m in 1:clusters)
+    {
+      mean_clus[m,]<-mean_int
+      temp<-mvtnorm::rmvnorm(clus_dat_part[m], mean=mean_int, sigma=cov)
+      mean_int<-(mean_int+5)+(-5*over_cont)
+      cont_data<-rbind(cont_data, temp)
+    }
+    
+    cont_data<-cont_data[-1,]
+    tot_data<-c(tot_data,as.vector(cont_data))
+  }
+  
+  #generate ord _data
+  if(!is.null(ord_var))
+  {
+    if(is.null(over_ord))
+    {
+      over_ord<-rep(0,times=ord_var)
+    }
+    else{if(length(over_ord)!=ord_var){stop("Please make sure that the overlap parameters are of the same length as the ordinal variables")}}
+    
+    mean_int_ord<-seq(from=0, to=10, length.out = ord_var)
+    ord_data<-matrix(0, nrow=1,ncol=ord_var)
+    cov_ord<-diag(1,nrow=ord_var)
+    for(m in 1:clusters)
+    {
+      #mean_clus[m,]<-mean_int
+      temp<-abs(mvtnorm::rmvnorm(clus_dat_part[m], mean=mean_int_ord, sigma=cov_ord))
+      mean_int_ord<-(mean_int_ord+7)+(-7*over_ord)
+      ord_data<-rbind(ord_data, temp)
+    }
+  
+    ord_data<-ord_data[-1,]
+    ord_data<-as.matrix(ord_data)
+    mean_int_ord<-seq(from=0, to=10, length.out = ord_var)
+    ordinal_data<-vector()
+    for(k in 1:ord_var)
+    {
+      
+      int_lin<-seq(from=mean_int_ord[k],to=(mean_int_ord[k]+7*(clusters-1)), length.out=clusters*2)
+      
+      ord_lab<-rep(0,nrow(ord_data))
+      
+      for(l in 1:(length(int_lin)-1))
+      {
+        for(i in 1:nrow(as.matrix(ord_data)))
+        {
+          
+          if(ord_data[i,k]>= int_lin[l] && ord_data[i,k]<int_lin[l+1])
+          {
+            ord_lab[i]=l
+          }
+          if(ord_data[i,k]>=int_lin[length(int_lin)])
+          {
+            ord_lab[i]=length(int_lin)
+          } 
+        }
+      }
+      
+      ordinal_data<-c(ordinal_data,ord_lab)
+    }
+    
+    tot_data<-c(tot_data,ordinal_data)
+  }
+
+  #generate binary Data 
+  if(!(is.null(bin_var)))
+  {
+    if(is.null(over_bin))
+    {
+      over_bin<-rep(0,times=bin_var)
+    }
+    else{if(length(over_bin)!=bin_var){stop("Please make sure that the overlap parameters are of the same length as the binary variables")}}
+    
+    bin_data<-vector()
+    for(k in 1:bin_var)
+    {
+      cov_bin<-diag((.5), nrow=2)
+      mean_bin<-rep(0,times=2)
+      bin_data_temp<-vector()
+      count<-1
+      for(m in 1:clusters)
+      {
+        bin_lab<-rep(0, times=clus_dat_part[m])
+        mean_bin[count]<-c(2.6)
+        mean_bin[-count]<-(2.6*over_bin[k])
+        data_bin<-mvtnorm::rmvnorm(clus_dat_part[m], mean=mean_bin, sigma=cov_bin)
+        
+        for(i in 1:clus_dat_part[m])
+        {
+          bin_lab[i]<-which(data_bin[i,]==max(data_bin[i,]))-1
+        }
+        bin_data_temp<-c(bin_data_temp, bin_lab)
+        mean_bin<-rep(0,times=2)
+        count<-count+1
+        if(count>2)
+        {count<-1}
+      }
+      bin_data<-c(bin_data, bin_data_temp)
+      
+    }
+    tot_data<-c(tot_data,bin_data)
+    
+  }
+  
+  #generate nominal Data 
+  if(!(is.null(nom_var)))
+  {
+    if(is.null(over_nom))
+    {
+      over_nom<-rep(0,times=nom_var)
+    }
+    else{if(length(over_nom)!=nom_var){stop("Please make sure that the overlap parameters are of the same length as the nominal variables")}}
+    
+    nom_data<-vector()
+    for(k in 1:nom_var)
+    {
+      cov_ord<-diag((.5), nrow=2*clusters)
+      mean_ord<-rep(0,times=2*clusters)
+      nom_data_temp<-vector()
+      for(m in 1:clusters)
+      {
+        nom_lab<-rep(0, times=clus_dat_part[m])
+        mean_ord[(2*m-1):(2*m)]<-c(2.5,2.5)
+        mean_ord[-((2*m-1):(2*m))]<-(2.5*over_nom[k])
+        data_nom<-mvtnorm::rmvnorm(clus_dat_part[m], mean=mean_ord, sigma=cov_ord)
+        
+        for(i in 1:clus_dat_part[m])
+        {
+          if(max(data_nom[i,])<0)
+          {
+            nom_lab[i]=1
+          }
+          else{
+            nom_lab[i]<-which(data_nom[i,]==max(data_nom[i,]))+1
+          }}
+        nom_data_temp<-c(nom_data_temp, nom_lab)
+        mean_ord<-rep(0,times=2*clusters)
+      }
+      nom_data<-c(nom_data, nom_data_temp)
+      
+    }
+    tot_data<-c(tot_data,nom_data)
+    
+  }
+  
+  tot_data_mat<-matrix(tot_data,nrow=obser,byrow=F)
+  result<-list(data=tot_data_mat)
+  if(!(is.null(cont_var)))
+  {
+    result<-list(cont_means=mean_clus, data=tot_data_mat)
+  }
+  
+  
+  return(result)
+}
+
+
+#---------------------------------------------------------------------
+# PART 2: SIMULATION AND CLUSTERING FOR  2, 5 and 7 CLUSTERS
+#---------------------------------------------------------------------
+
+#NOTE: for clust = 5 and 7, 80% overlap was not considered because it was 
+#computationally time consuming. 
+# Also, due to time constraint, the following codes were implemented 
+#in R Studio using Amazon Web Services
+
+
+overlap <- c(.3,.6)
+contprop <-c(.25,.5,.75)
+clust <- 7 # CHANGE this for 2 or 5 clusters 
+obs<- 1920
+varcount <- 128
+
+
+#  Prepare the output table
+lab.method<- rep(c("KAMILA", "K Means", "C Means", "PDQ", "Student's t"),9)
+lab.overlap<- c( rep(c("0.3","0.6","0.8"),each= 15))
+lab.contprop<-rep(rep(c("0.25","0.5","0.75"),each=5),3)
+G <-rep(clust,45)
+tab<- data.frame(G = G, Method= lab.method, Overlap = lab.overlap, Cont.Prop = lab.contprop )
+View(tab)
+
+
+#-------------------------and the action begins-----------------------------------------
+
+
+#initialize variables and libraries
+ARI.method<- c() 
+iter.method <- c()
+
+library(kamila) #KAMILA
+library(FactoMineR) #MCA
+library(MixGHD) #ARI
+library(fclust) #C MEANS
+library(FPDclustering) #PDQ
+
+
+for (i in overlap){ # for clust = 5 and 7, use: for (i in overlap[-3])
+  
+  for (j in contprop){
+    
+    # intialize
+    ARI_kamila<-0
+    ARI_kmeans<-0
+    ARI_cmeans<-0
+    ARI_pd<-0
+    ARI_t<-0
+    
+    
+    #initialize total iterations
+    iter_kamila <- 0
+    iter_kmeans <- 0
+    iter_cmeans <- 0
+    iter_pd <- 0
+    iter_t <- 0
+    
+    for (k in 1:10){
+      
+      #-------------------
+      # DATA SIMULATION
+      #-------------------
+      
+      
+      
+      #simulate the mixed dataset
+      dummy <- mixt_data(cont_var = (varcount*(j)), #continous varibales
+                         over_cont = rep(i,times = (varcount*(j))), 
+                         nom_var = (varcount*(1-j)), #cat variables
+                         nom_lev = 5, #random;y chosen levels for categorical variable
+                         over_nom = rep(i, times = (varcount*(1-j))), 
+                         clusters = clust,
+                         obser = obs 
+      )
+      #add cluster membership column
+      mem.count <- floor(rep((1920/clust),clust))
+      mem.count[clust]<-obs-sum(mem.count[-clust])
+      membership <- rep(1:clust, times = mem.count)
+      
+      res <-cbind(rep(1:clust, times = mem.count),dummy$data) #membership + data
+      
+      #extract catagorical variables
+      index.fill1<-(varcount*(j)+2):129
+      fill1 <- res[, index.fill1]
+      cat.name <- c(sprintf("cat%d",1:ncol(fill1))) #name columns for mca
+      colnames(fill1) <- cat.name
+      mode(fill1) <- "character" #make entries into strings while preserving the matrix
+      mca.out <- MCA(fill1,ncp = (varcount*(1-j)), graph = F) #convert cat data into "continuous" data
+      
+      #extract and name continuous variables
+      index.fill2<- 1:(varcount*(j)+1)
+      fill2 <- res[, index.fill2]
+      con.name <- c("clust",sprintf("con%d",1:(varcount*(j))))
+      colnames(fill2) <- con.name
+      
+      #make the matrix to do cluster analysis 
+      fill3 <- cbind(fill2,mca.out$ind$coord)
+      
+      true.labels<- fill3[,1]
+      
+      
+      #------------------
+      # CLUSTER ANALYSIS
+      #------------------
+      
+      # KAMILA
+      
+      kam.dummy <- kamila(conVar = as.data.frame(fill2[,-1]),
+                          catFactor = as.data.frame(fill1),
+                          numClust = clust, #apriori information
+                          numInit = 20,
+                          maxIter =25
+      ) 
+      
+      ARI_kamila<- ARI_kamila+ 0.1*(ARI(true.labels, kam.dummy$finalMemb))
+      iter_kamila <- iter_kamila + 0.1*(mean(kam.dummy$numIter))
+      
+      
+      # K MEANS
+      kmeans.dummy<- kmeans(fill3[,-1], centers = clust, nstart = 20, iter.max = 25)
+      ARI_kmeans<- ARI_kmeans + 0.1*(ARI(true.labels, kmeans.dummy$cluster))
+      iter_kmeans <- iter_kmeans + 0.1*(kmeans.dummy$iter)
+      
+      # C MEANS
+      cmeans.dummy<-FKM(fill3[,-1],k=clust, RS = 20) #has max iter of 1 million
+      ARI_cmeans<- ARI_cmeans + 0.1*(ARI(true.labels, cmeans.dummy$clus[,1]))
+      iter_cmeans <- iter_cmeans + 0.1*(mean(cmeans.dummy$iter))
+      
+      # PDQ
+      pd.dummy<-PDclust(fill3[,-1],k=clust) #the code specifies this with max iterations set to 1000
+      ARI_pd<- ARI_pd+ 0.1*(ARI(true.labels, pd.dummy$label))
+      iter_pd <- iter_pd + 0.1*(pd.dummy$iter)
+      
+      
+      # t
+      t.dummy<-teigen(fill3[,-1],Gs=clust)
+      ARI_t<- ARI_t+ 0.1*(ARI(true.labels, t.dummy$classification))
+      iter_pd <- iter_t + 0.1*(t.dummy$iter)
+      
+    }
+    
+    ARI.method<-c(ARI.method, ARI_kamila, ARI_kmeans, ARI_cmeans, ARI_pd, ARI_t)
+    iter.method <- c(iter.method, iter_kamila, iter_kmeans, iter_cmeans, iter_pd, iter_t)
+    
+  }
+}
+
+tab$ARI<-ARI.method
+tab$iter <-iter.method
+
+#------------------------------
+# PART 3 : VISUALIZATION
+#------------------------------
+
+install.packages("ggpubr")
+install.packages("ggplot2")
+library(ggplot2)
+library(ggpubr)
+
+#----------
+# clust=2
+#----------
+load("TABLE2.RData")
+data<- TABLE_2
+
+p2<- ggplot(data=data, aes(data$Method, data$ARI, colour= factor(data$Overlap), shape=data$Cont.Prop)) 
+p2<-p2+ geom_point(size= 8, alpha=0.5) + ylab("ARI") + xlab("Method") + ggtitle("ARI v/s Methods, G=2") + labs(colour= "Overlap", shape= "Prop. Continous")+theme(legend.position="bottom")
+p2
+
+q2<- ggplot(data=data, aes(data$Method, data$iter, col= factor(data$Overlap), shape=data$Cont.Prop)) 
+q2<-q2+ geom_point(size= 8, alpha=0.5) + ylab("Iteration") + xlab("Method") + ggtitle("Iteration v/s Methods, G=2") + labs(colour= "Overlap", shape= "Prop. Continous")
+q2
+
+ggarrange(p2,q2, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+
+
+#---------
+# clust=5
+#---------
+load("TABLE5.RData")
+data<- TABLE_5
+
+p5<- ggplot(data=data, aes(data$Method, data$ARI, colour= factor(data$Overlap), shape=data$Cont.Prop)) 
+p5<-p5+ geom_point(size= 8, alpha=0.5) + ylab("ARI") + xlab("Method") + ggtitle("ARI v/s Methods, G=5") + labs(colour= "Overlap", shape= "Prop. Continous")+theme(legend.position="bottom")
+p5
+
+q5<- ggplot(data=data, aes(data$Method, data$iter, col= factor(data$Overlap), shape=data$Cont.Prop)) 
+q5<-q5+ geom_point(size= 8, alpha=0.5) + ylab("Iteration") + xlab("Method") + ggtitle("Iteration v/s Methods, G=5") + labs(colour= "Overlap", shape= "Prop. Continous")
+q5
+
+ggarrange(p5,q5, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+
+
+#----------
+# clust=7
+#----------
+load("TABLE7.RData")
+data<- TABLE_7
+
+
+p7<- ggplot(data=data, aes(data$Method, data$ARI, colour= factor(data$Overlap), shape=data$Cont.Prop)) 
+p7<-p7+ geom_point(size= 8, alpha=0.5) + ylab("ARI") + xlab("Method") + ggtitle("ARI v/s Methods, G=7") + labs(colour= "Overlap", shape= "Prop. Continous")+theme(legend.position="bottom")
+p7
+
+q7<- ggplot(data=data, aes(data$Method, data$iter, col= factor(data$Overlap), shape=data$Cont.Prop)) 
+q7<-q7+ geom_point(size= 8, alpha=0.5) + ylab("Iteration") + xlab("Method") + ggtitle("Iteration v/s Methods, G=7") + labs(colour= "Overlap", shape= "Prop. Continous")
+q7
+
+ggarrange(p7,q7, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+
+#------------------------------------------------------------
+# EXTRA: SIMULATION AND ANALYSIS OF A SKEWED DISTRIBUTION
+#------------------------------------------------------------
+
+#in this section we also compare the our findings to a simulated skew t distribution
+
+install.packages("EMMIXskew") #skew t simulation
+
+#simulation
+library(EMMIXskew) #rdmst
+
+#initialize variables
+cont_var <- .75*128
+nom_var <- .25*128
+clusters <- 5
+obser <- 1920
+over_cont <- rep(.6,cont_var)
+del=rep(3,cont_var)
+
+ARI_kamila<-0
+ARI_kmeans<-0
+ARI_cmeans<-0
+ARI_pd<-0
+ARI_t<-0
+
+iter_kamila <- 0
+iter_kmeans <- 0
+iter_cmeans <- 0
+iter_pd <- 0
+iter_t <- 0
+
+tab.skew<- data.frame(G = rep("5",5),
+                      Method= c("KAMILA", "K Means", "C Means", "PD", "Student's t"),
+                      Overlap = rep("0.6",5),
+                      Cont.Prop = rep("0.75",5))
+ARI.skew<- c() 
+iter.skew <- c()
+for (k in 1:10){
+  #generate skew continuous data
+  tot_data<-vector()
+  clus_dat_part<-floor(rep((obser/clusters),clusters))
+  clus_dat_part[clusters]<-obser-sum(clus_dat_part[-clusters])
+  cov<-diag(1,nrow=cont_var)
+  data<-matrix(0,ncol=cont_var, nrow=1)
+  mean_clus<-matrix(0,ncol=cont_var, nrow=clusters)
+  mean_int<-seq(from=0, to=10, length.out = cont_var)
+  cont_data<-matrix(0, nrow=1,ncol=cont_var)
+  for(m in 1:clusters)
+  {
+    mean_clus[m,]<-mean_int
+    temp<-rdmst(n =clus_dat_part[m], 
+                p = cont_var,
+                mean=mean_int, 
+                del = del)
+    mean_int<-(mean_int+5)+(-5*over_cont)
+    cont_data<-rbind(cont_data, temp)
+  }
+  cont_data<-cont_data[-1,]
+  tot_data<-c(tot_data,as.vector(cont_data))
+  tot_data_mat<-matrix(tot_data,nrow=obser,byrow=F)
+  
+  mem.count <- floor(rep((obser/clusters),clusters))
+  mem.count[clusters]<-obser-sum(mem.count[-clusters])
+  tot_data_mat <-cbind(rep(1:clusters, times = mem.count),tot_data_mat) 
+  con.name <- c("clust",sprintf("con%d",1:cont_var))
+  colnames(tot_data_mat) <- con.name
+  
+  #generate categorical data
+  cat_data <- mixt_data(nom_var = nom_var, 
+                        nom_lev = 5, 
+                        over_nom = rep(.6, times = nom_var), 
+                        clusters = clusters,
+                        obser = obser)
+  cat_matrix <- cat_data$data
+  cat.name <- c(sprintf("cat%d",1:ncol(cat_matrix))) 
+  colnames(cat_matrix) <- cat.name
+  mode(cat_matrix) <- "character" 
+  mca.out <- MCA(cat_matrix, ncp = nom_var, graph = F)
+  
+  
+  #make the matrix to do cluster analysis 
+  fill3 <- cbind(tot_data_mat,mca.out$ind$coord)
+  true.labels<- fill3[,1]
+  
+  #------------------
+  # CLUSTER ANALYSIS
+  #------------------
+  
+  # KAMILA
+  
+  kam.dummy <- kamila(conVar = as.data.frame(tot_data_mat[,-1]),
+                      catFactor = as.data.frame(cat_matrix),
+                      numClust = clusters, #apriori information
+                      numInit = 20,
+                      maxIter =25
+  ) 
+  
+  ARI_kamila<- ARI_kamila+ 0.1*(ARI(true.labels, kam.dummy$finalMemb))
+  iter_kamila <- iter_kamila + 0.1*(mean(kam.dummy$numIter))
+  
+  
+  # K MEANS
+  kmeans.dummy<- kmeans(fill3[,-1], centers = clusters, nstart = 20, iter.max = 25)
+  ARI_kmeans<- ARI_kmeans + 0.1*(ARI(true.labels, kmeans.dummy$cluster))
+  iter_kmeans <- iter_kmeans + 0.1*(kmeans.dummy$iter)
+  
+  # C MEANS
+  cmeans.dummy<-FKM(fill3[,-1],k=clusters, RS = 20)
+  ARI_cmeans<- ARI_cmeans + 0.1*(ARI(true.labels, cmeans.dummy$clus[,1]))
+  iter_cmeans <- iter_cmeans + 0.1*(mean(cmeans.dummy$iter))
+  
+  # PD
+  pd.dummy<-PDclust(fill3[,-1],k=clusters)
+  ARI_pd<- ARI_pd+ 0.1*(ARI(true.labels, pd.dummy$label))
+  iter_pd <- iter_pd + 0.1*(pd.dummy$iter)
+  
+  
+  # t
+  t.dummy<-teigen(fill3[,-1],Gs=clusters)
+  ARI_t<- ARI_t+ 0.1*(ARI(true.labels, t.dummy$classification))
+  iter_t <- iter_t + 0.1*(t.dummy$iter)
+  
+  
+  ARI.skew <- c(ARI.skew, ARI_kamila, ARI_kmeans, ARI_cmeans, ARI_pd, ARI_t)
+  iter.skew <- c(iter.skew, iter_kamila, iter_kmeans, iter_cmeans, iter_pd, iter_t)
+  
+}
+
+
+tab.skew$ARI<-ARI.skew
+tab.skew$iter <-iter.skew
+
+#--------------------
+# SKEW VISUALIZATION
+#--------------------
+load("TABLE5.RData")
+data<- TABLE_5
+data.skew <- rbind(data[c(21:24,42),],tab.skew)
+set_type <- c(rep("Gaussian",5),rep("Skew t",5))
+data.skew$set <- set_type
+
+
+p5s<- ggplot(data=data, aes(data$Method, data$ARI, colour= factor(data$set))) 
+p5s<-p5s+ geom_point(size= 8, alpha=0.5) + ylab("ARI") + xlab("Method") + ggtitle("ARI: Gaussian v/s Skew, G=5") + labs(colour= "Model Type")+theme(legend.position="bottom")
+p5s
+
+q5s<- ggplot(data=data, aes(data$Method, data$iter, col= factor(data$set))) 
+q5s<-q5s+ geom_point(size= 8, alpha=0.5) + ylab("Iteration") + xlab("Method") + ggtitle("Iteration: Gaussian v/s Skew, G=5") + labs(colour= "Model Type")
+q5s
+
+ggarrange(p5s,q5s, ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+
+
