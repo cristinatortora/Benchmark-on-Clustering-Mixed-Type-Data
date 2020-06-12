@@ -1,5 +1,5 @@
 
-This page shows the simulation study results for the paper:
+This repository contains the code and the results of the paper:
 
 Jarrett Jimeno, Madhumita Roy, and Cristina Tortora (2020) Clustering Mixed-Type Data: a benchmark study on KAMILA and K-prototypes. IFCS2019 conference proceedings, accepted.
 
