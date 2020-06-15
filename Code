@@ -15,6 +15,7 @@ install.packages("MixGHD") #ARI
 install.packages("fclust") # Fuzzy K Means
 install.packages("FPDclustering")#PDQ
 install.packages("teigen") #student's t
+install.packages("clustMixType") #k-prototype
 
 
 #--------------------------------------------------------------------
@@ -259,6 +260,7 @@ library(FactoMineR) #MCA
 library(MixGHD) #ARI
 library(fclust) #C MEANS
 library(FPDclustering) #PDQ
+library(clustMixType) #k-protoype
 
 
 for (i in overlap){ # for clust = 5 and 7, use: for (i in overlap[-3])
